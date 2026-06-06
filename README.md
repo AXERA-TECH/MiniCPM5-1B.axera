@@ -57,7 +57,7 @@ AXERA-TECH/MiniCPM5-1B
 
 如果只使用发布包中的 `axllm serve`，不需要额外 Python 推理依赖。
 
-如果你需要自行编译模型，需要准备 AXERA NPU 开发环境，并保证 `pulsar2 llm_build` 可用。
+如果你需要自行编译模型，需要准备 AXERA NPU 编译环境，并保证 `pulsar2 llm_build` 可用。
 
 ### 3. Thinking 模式说明
 
@@ -127,6 +127,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 ```bash
 cd model_convert
+export INPUT_PATH=/path/to/original/MiniCPM5-1B
 ./llm_build_ax650.sh
 ```
 
