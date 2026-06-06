@@ -2,119 +2,81 @@
 
 > `openbmb/MiniCPM5-1B` 在 `AX650 / AX650N` 上的复现工程。
 
-本仓库面向需要重新编译模型、核对运行配置或理解 AXERA 适配流程的开发者。  
-如果你只需要直接在板端运行，请优先使用 Hugging Face 发布包：<https://huggingface.co/AXERA-TECH/MiniCPM5-1B>。
+本仓库的目标是帮助用户完成两类工作：
+
+- 复现板端运行与精度验证
+- 重新编译 `MiniCPM5-1B` 的 LLM 产物
+
+本仓库面向需要完整复现实验过程、重新编译模型或核对精度的用户。
+
+> 当前仓库只保存复现所需的脚本和 tokenizer/config，不提交 `.axmodel`、embedding、ONNX、safetensors 等编译或推理产物。如果你希望直接体验面向用户的实际 Demo，请参考 Hugging Face 发布页：<https://huggingface.co/AXERA-TECH/MiniCPM5-1B>。
 
 ## 适用范围
 
 - 平台：`AX650 / AX650N`
-- Runtime：`axllm serve` / `axllm run`
-- 模型类型：纯文本 LLM
-- 编译类型：`model_type=llama`，`hidden_state_type=bf16`
-- 上下文配置：`prefill_len=128`，`kv_cache_len=2047`，`prefill_max_token_num=1280`
-- 默认生成模式：`enable_thinking=true`
-
-当前发布包已经验证：
-
-- 文本对话
-- 多轮文本对话
-- `enable_thinking=true/false` 请求级切换
-- thinking 模式下 OpenAI API 输出显式 `<think>...</think>` 标记
-
-MiniCPM5-1B 是纯文本模型；当前包不支持图片、视频或音频输入。
-
-本仓库不提交任何 `.axmodel`、embedding、ONNX、safetensors 等编译或推理产物。
+- 支持的板端能力：
+  - 文本对话
+  - 多轮文本对话
+  - `enable_thinking=true/false` 请求级切换
+  - thinking 模式下返回显式 `<think>...</think>` 标记
+- `MiniCPM5-1B` 是纯文本模型，不支持图片、视频或音频输入
+- 当前仓库不提供 Python 端 `.axmodel` 推理脚本；端到端验证以 Hugging Face 发布包中的 `axllm serve` 为准
 
 ## 仓库职责
 
 ```text
 .
-├── model_convert/   # LLM 编译脚本和转换说明
-├── python/          # tokenizer/config 元数据
-└── README.md
+├── python/         # tokenizer/config 相关文件
+└── model_convert/  # LLM 编译脚本和转换说明
 ```
 
-根目录 `README.md` 说明仓库定位、运行能力和复现方式。  
-重新执行 `pulsar2 llm_build` 请阅读 [model_convert/README.md](./model_convert/README.md)。
+根目录 `README.md` 负责说明“如何准备运行目录并在板端复现结果”。  
+如果你需要重新编译 LLM axmodel，请阅读 [model_convert/README.md](./model_convert/README.md)。
 
-## 与发布包的关系
+## 运行前准备
 
-本仓库是开发侧复现仓库，包含转换脚本和小型元数据。  
-面向最终用户的可直接运行包是 Hugging Face 仓库：
+### 1. 准备运行目录
+
+在执行板端命令前，请确认以下文件已经准备好：
+
+```text
+python/
+├── MiniCPM5-1B/          # tokenizer / config 相关文件
+└── MiniCPM5-1B_axmodel/  # 用户本地编译得到的 LLM 运行目录，不提交仓库
+```
+
+如果你只希望直接运行模型，请使用 Hugging Face 发布包：
 
 ```text
 AXERA-TECH/MiniCPM5-1B
 ```
 
-发布包采用根目录直接 `axllm serve .` 的布局；本 `.axera` 仓库保留 `python/` 与 `model_convert/` 结构，便于复现编译过程和核对产物。
+发布包已经包含 `bin/axllm`、LLM axmodel、embedding 和 runtime config，可以直接执行 `axllm serve .`。
 
-## 环境准备
+### 2. 安装板端依赖
 
-### 编译环境
+如果只使用发布包中的 `axllm serve`，不需要额外 Python 推理依赖。
 
-`pulsar2 llm_build` 需要 AXERA NPU 开发环境。示例：
+如果你需要自行编译模型，需要准备 AXERA NPU 开发环境，并保证 `pulsar2 llm_build` 可用。
 
-```bash
-export CODEBASE_ROOT=/path/to/npu-codebase
-export DEPLOY_ROOT=/path/to/auto_model_deployment
-export CONDA_SH=/path/to/conda.sh
-export CONDA_ENV=npu
-source "$CONDA_SH"
-conda activate "$CONDA_ENV"
-cd "$CODEBASE_ROOT"
-source script/npu_dev
+### 3. Thinking 模式说明
+
+发布包的 runtime config 默认设置：
+
+```json
+{
+  "enable_thinking": true
+}
 ```
 
-本仓库的脚本默认使用内部验证路径；外部用户应通过环境变量覆盖：
+默认请求会进入 thinking 模式，并在 OpenAI API 返回内容中显式包含 `<think>...</think>`，便于前端区分 reasoning 和最终回答。  
+如果请求中设置 `"enable_thinking": false`，则按 no-thinking 模式生成。
 
-```bash
-export CODEBASE_ROOT=/path/to/npu-codebase
-export DEPLOY_ROOT=/path/to/auto_model_deployment
-export INPUT_PATH=/path/to/openbmb/MiniCPM5-1B
-export CONDA_SH=/path/to/conda.sh
-export CONDA_ENV=npu
-```
+## 板端复现
 
-### 板端运行环境
+以下命令推荐在 Hugging Face 发布包目录执行。发布包布局和本 `.axera` 仓库不同，发布包可以直接作为 `axllm` 的运行目录。
 
-`.axmodel` 只能在 AX650 板端运行，不要在 x86 服务器上执行。
-
-如果只是使用最终发布包的 `axllm serve`，不需要 Python 调试依赖。
-
-## 重新编译 LLM
-
-在仓库根目录执行：
-
-```bash
-cd model_convert
-./llm_build_ax650.sh
-```
-
-默认输出到本地工作区：
-
-```text
-python/MiniCPM5-1B_axmodel/
-```
-
-`*_axmodel/` 已被 `.gitignore` 忽略，不应提交到本仓库。
-
-也可以显式指定输出目录：
-
-```bash
-./llm_build_ax650.sh /path/to/output_axmodel
-```
-
-脚本默认启用：
-
-```bash
-FLOAT_MATMUL_USE_CONV_EU=1
-```
-
-该选项在 AX650 上可以明显改善 TTFT。
-
-## 发布包验证
-
-推荐在最终发布包目录执行：
+### `axllm serve`
 
 ```bash
 cd /path/to/MiniCPM5-1B
@@ -128,7 +90,7 @@ chmod +x ./bin/axllm
 curl http://127.0.0.1:8000/health
 ```
 
-默认 thinking 请求：
+### 默认 thinking 请求
 
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
@@ -143,7 +105,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   }'
 ```
 
-关闭 thinking：
+### 关闭 thinking
 
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
@@ -159,18 +121,21 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   }'
 ```
 
-## 本仓库内容
+## 模型转换
 
-本仓库只保留复现所需的脚本和小型元数据：
+本仓库提供 LLM 编译脚本：
 
-```text
-python/
-└── MiniCPM5-1B/          # tokenizer / config 相关文件，不包含原始权重
+```bash
+cd model_convert
+./llm_build_ax650.sh
 ```
 
-说明：
+脚本默认输出到：
 
-- `python/MiniCPM5-1B_axmodel/` 是本地编译输出目录，不提交仓库
-- 发布包中的 runtime `config.json` 默认设置 `enable_thinking=true`
-- 原始 Hugging Face `safetensors` 权重不随本仓库发布
-- 最终用户部署请使用 Hugging Face 发布包，而不是直接把本仓库当作运行包
+```text
+python/MiniCPM5-1B_axmodel/
+```
+
+`*_axmodel/`、`.axmodel`、embedding `.bin`、ONNX 和 safetensors 均已被 `.gitignore` 忽略，不应提交到本仓库。
+
+如果你需要重新执行编译，请阅读 [model_convert/README.md](./model_convert/README.md)。
