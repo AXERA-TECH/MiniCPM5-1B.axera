@@ -1,24 +1,35 @@
-# MiniCPM5-1B 模型转换
+# MiniCPM5-1B 模型转换与编译
 
-本文档说明 `openbmb/MiniCPM5-1B` 在 AX650 上的 LLM 编译方式。
+本文档描述 `openbmb/MiniCPM5-1B` 在 AXERA 平台上的开发侧工作流，覆盖以下内容：
 
-## 当前状态
+- LLM `pulsar2 llm_build` 编译
+- 编译输出目录约定
+- 编译产物的板端加载检查
+- 与 Hugging Face 发布包的产物同步关系
 
-- 已验证 `pulsar2 llm_build`
-- `model_type=llama`
-- `hidden_state_type=bf16`
-- `prefill_len=128`
-- `kv_cache_len=2047`
-- 额外 prefill group 覆盖到 `1152`
-- 推荐启用 `FLOAT_MATMUL_USE_CONV_EU=1`
+本文档默认面向开发者使用，所有命令默认在 `model_convert/` 目录下执行。
 
-MiniCPM5-1B 是纯文本模型，不涉及 VIT、音频或视频编码器编译。
+> 当前仓库不提交 `.axmodel`、embedding、ONNX、safetensors 等编译或推理产物。编译输出目录已通过 `.gitignore` 忽略。
 
-本仓库不提交 `.axmodel`、embedding、ONNX、safetensors 等编译或推理产物。
+## 目录说明
 
-## 环境变量
+```text
+model_convert/
+├── README.md
+└── llm_build_ax650.sh      # AX650 LLM 编译脚本
+```
 
-脚本默认值适配内部验证环境。外部用户应按自己的目录覆盖：
+`MiniCPM5-1B` 是纯文本模型，本目录不涉及 Vision、Audio 或 Video encoder 的导出与编译。
+
+## 环境准备
+
+`pulsar2 llm_build` 相关命令需要 AXERA NPU 开发环境。请先准备：
+
+- npu-codebase：包含 `script/npu_dev` 和 `pulsar2 llm_build` 集成代码
+- 原始 Hugging Face 模型目录：`openbmb/MiniCPM5-1B`
+- 可用的 `npu` conda 环境或等价 Python 环境
+
+脚本通过环境变量接收路径：
 
 ```bash
 export CODEBASE_ROOT=/path/to/npu-codebase
@@ -30,28 +41,67 @@ export CONDA_ENV=npu
 
 其中：
 
-- `CODEBASE_ROOT`：包含 `script/npu_dev` 和 `pulsar2 llm_build` 集成代码的 npu-codebase
+- `CODEBASE_ROOT`：npu-codebase 根目录
 - `DEPLOY_ROOT`：模型部署工作区根目录
 - `INPUT_PATH`：原始 Hugging Face 模型目录
 - `CONDA_SH` / `CONDA_ENV`：用于激活编译环境
 
-## 编译命令
+下文所有脚本默认以 `model_convert/` 为当前工作目录。
 
-在本目录执行：
+## 推荐顺序
+
+如果你的目标是复现当前 LLM 编译流程，建议按下面顺序执行：
+
+1. 准备原始 Hugging Face 权重目录
+2. 设置 `CODEBASE_ROOT`、`DEPLOY_ROOT`、`INPUT_PATH`、`CONDA_SH`、`CONDA_ENV`
+3. 执行 `./llm_build_ax650.sh`
+4. 在 AX650 板端用 `ax_run_model` 检查单个子图是否能加载
+5. 将编译输出整理到 Hugging Face 发布包布局
+6. 使用发布包中的 `axllm serve` 做端到端验证
+
+## 已验证配置
+
+当前已验证的 LLM 编译配置：
+
+| Item | Value |
+|---|---|
+| `model_type` | `llama` |
+| `hidden_state_type` | `bf16` |
+| `prefill_len` | `128` |
+| `kv_cache_len` | `2047` |
+| `last_kv_cache_len` | `128, 256, 384, 512, 640, 768, 896, 1024, 1152` |
+| `chip` | `AX650` |
+| `parallel` | `32` |
+| MatMul 优化 | `FLOAT_MATMUL_USE_CONV_EU=1` |
+
+`FLOAT_MATMUL_USE_CONV_EU=1` 是当前 AX650 验证中使用的配置，可明显改善 TTFT。
+
+## 准备原始模型
+
+从 Hugging Face 下载原始模型权重。以下示例假设克隆到仓库同级工作区，并用 `$INPUT_PATH` 引用：
+
+```bash
+git clone https://huggingface.co/openbmb/MiniCPM5-1B ../../Minicpm5-hf-original/MiniCPM5-1B
+export INPUT_PATH=../../Minicpm5-hf-original/MiniCPM5-1B
+```
+
+原始权重不提交到本仓库。
+
+## 编译 LLM axmodel
+
+在 `model_convert/` 目录执行：
 
 ```bash
 ./llm_build_ax650.sh
 ```
 
-默认输出到本地工作区：
+默认输出到：
 
 ```text
 ../python/MiniCPM5-1B_axmodel
 ```
 
-`*_axmodel/` 已被 `.gitignore` 忽略，不应提交到本仓库。
-
-也可以指定输出目录：
+也可以显式指定输出目录：
 
 ```bash
 ./llm_build_ax650.sh /path/to/output_axmodel
@@ -81,13 +131,39 @@ FLOAT_MATMUL_USE_CONV_EU=1 pulsar2 llm_build \
   --parallel 32
 ```
 
-## 验证建议
+## 输出目录说明
 
-编译完成后，先在 AX650 板端用 `ax_run_model` 检查单个子图是否能加载，再使用最终发布包中的 `axllm serve` 做端到端验证。
+编译完成后，输出目录通常包含：
 
-最终发布包验证示例：
+```text
+MiniCPM5-1B_axmodel/
+├── llama_p128_l0_together.axmodel
+├── ...
+├── llama_p128_l23_together.axmodel
+├── llama_post.axmodel
+├── model.embed_tokens.weight.bfloat16.bin
+├── minicpm5_tokenizer.txt
+├── config.json
+└── post_config.json
+```
+
+这些文件属于编译产物，不提交到 `.axera` 仓库。  
+如果需要发布，请整理到 Hugging Face 发布包的最终布局中。
+
+## 板端加载检查
+
+`.axmodel` 只能在 AX650 板端执行。可以先检查单个子图能否加载：
+
+```bash
+cd /path/to/MiniCPM5-1B_axmodel
+/opt/bin/ax_run_model -m llama_p128_l0_together.axmodel -g 0 --skip-running
+```
+
+端到端验证建议使用 Hugging Face 发布包：
 
 ```bash
 cd /path/to/MiniCPM5-1B
 ./bin/axllm serve .
 ```
+
+发布包的 runtime config 默认启用 `enable_thinking=true`。如果需要 no-thinking 行为，请在 OpenAI 请求中设置 `"enable_thinking": false`。
