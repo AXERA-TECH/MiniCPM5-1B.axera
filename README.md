@@ -2,14 +2,14 @@
 
 > `openbmb/MiniCPM5-1B` 在 `AX650 / AX650N` 上的复现工程。
 
-本仓库的目标是帮助用户完成两类工作：
+本仓库的目标是帮助开发者完成两类工作：
 
 - 复现板端运行与精度验证
 - 重新编译 `MiniCPM5-1B` 的 LLM 产物
 
-本仓库面向需要完整复现实验过程、重新编译模型或核对精度的用户。
+本仓库面向需要重新编译模型、核对文本效果或排查板端问题的开发者。
 
-> 当前仓库只保存复现所需的脚本和 tokenizer/config，不提交 `.axmodel`、embedding、ONNX、safetensors 等编译或推理产物。如果你希望直接体验面向用户的实际 Demo，请参考 Hugging Face 发布页：<https://huggingface.co/AXERA-TECH/MiniCPM5-1B>。
+> 当前仓库只保存开发侧所需的脚本和 tokenizer/config，不提交 `.axmodel`、embedding、ONNX、safetensors 等编译或推理产物。如果你希望直接体验面向用户的实际 Demo，请参考 Hugging Face 发布页：<https://huggingface.co/AXERA-TECH/MiniCPM5-1B>。
 
 ## 适用范围
 
@@ -20,6 +20,7 @@
   - `enable_thinking=true/false` 请求级切换
   - thinking 模式下返回显式 `<think>...</think>` 标记
 - `MiniCPM5-1B` 是纯文本模型，不支持图片、视频或音频输入
+- 发布包默认关闭 thinking；如需 reasoning 输出，需要在请求中显式设置 `enable_thinking=true`
 - 当前仓库不提供 Python 端 `.axmodel` 推理脚本；端到端验证以 Hugging Face 发布包中的 `axllm serve` 为准
 
 ## 仓库职责
@@ -30,7 +31,13 @@
 └── model_convert/  # LLM 编译脚本和转换说明
 ```
 
-根目录 `README.md` 负责说明“如何准备运行目录并在板端复现结果”。  
+这个仓库是开发侧 staging 目录，不是最终发布包。
+
+最终平铺发布包位于：
+
+- `/data/tmp/yongqiang/nfs/auto_model_deployment/MiniCPM5-1B`
+- `/data/tmp/yongqiang/nfs/push_hugging_face/MiniCPM5-1B`
+
 如果你需要重新编译 LLM axmodel，请阅读 [model_convert/README.md](./model_convert/README.md)。
 
 ## 运行前准备
@@ -59,18 +66,18 @@ AXERA-TECH/MiniCPM5-1B
 
 如果你需要自行编译模型，需要准备 AXERA NPU 编译环境，并保证 `pulsar2 llm_build` 可用。
 
-### 3. Thinking 模式说明
+### 3. Thinking 开关说明
 
 发布包的 runtime config 默认设置：
 
 ```json
 {
-  "enable_thinking": true
+  "enable_thinking": false
 }
 ```
 
-默认请求会进入 thinking 模式，并在 OpenAI API 返回内容中显式包含 `<think>...</think>`，便于前端区分 reasoning 和最终回答。  
-如果请求中设置 `"enable_thinking": false`，则按 no-thinking 模式生成。
+默认请求会按 no-thinking 模式生成。
+如果请求中设置 `"enable_thinking": true`，则进入 thinking 模式，并在 OpenAI API 返回内容中显式包含 `<think>...</think>`，便于前端区分 reasoning 和最终回答。
 
 ## 板端复现
 
@@ -90,7 +97,7 @@ chmod +x ./bin/axllm
 curl http://127.0.0.1:8000/health
 ```
 
-### 默认 thinking 请求
+### 默认 no-thinking 请求
 
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
@@ -105,7 +112,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   }'
 ```
 
-### 关闭 thinking
+### 显式开启 thinking
 
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
@@ -113,10 +120,10 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -d '{
     "model": "AXERA-TECH/MiniCPM5-1B-AX650-C128-P1152-CTX2047",
     "messages": [
-      {"role": "user", "content": "中国的首都是哪里？请只回答城市名。"}
+      {"role": "user", "content": "中国的首都是哪里？请先思考，再给出简短答案。"}
     ],
-    "enable_thinking": false,
-    "max_tokens": 32,
+    "enable_thinking": true,
+    "max_tokens": 128,
     "temperature": 0
   }'
 ```

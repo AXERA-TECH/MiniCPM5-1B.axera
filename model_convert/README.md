@@ -165,4 +165,4 @@ cd /path/to/MiniCPM5-1B
 ./bin/axllm serve .
 ```
 
-发布包的 runtime config 默认启用 `enable_thinking=true`。如果需要 no-thinking 行为，请在 OpenAI 请求中设置 `"enable_thinking": false`。
+发布包的 runtime config 默认关闭 `enable_thinking`。如果需要 thinking 行为，请在 OpenAI 请求中设置 `"enable_thinking": true`。
