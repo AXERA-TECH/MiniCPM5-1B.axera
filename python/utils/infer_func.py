@@ -72,14 +72,13 @@ class InferManager:
         self.post_process_session = InferenceSession(os.path.join(model_dir, post_file))
         print("Model loaded successfully!")
 
+    def _input_meta(self, session, shape_group: int):
+        return {item.name: tuple(item.shape) for item in session.get_inputs(shape_group=shape_group)}
+
     def _decoder_output_names(self, shape_group: int) -> Tuple[str, str, str]:
-        if shape_group == 0:
-            return ("K_cache_out", "V_cache_out", "output")
-        return (
-            f"K_cache_out_{shape_group}",
-            f"V_cache_out_{shape_group}",
-            f"output_{shape_group}",
-        )
+        # The current AX650 MiniCPM5 exports keep stable output names across all
+        # shape groups, so do not synthesize group-specific suffixes here.
+        return ("K_cache_out", "V_cache_out", "output")
 
     def _run_decoder(self, session, input_feed, shape_group: int):
         names = self._decoder_output_names(shape_group)
@@ -87,10 +86,10 @@ class InferManager:
 
         try:
             outputs = session.run(list(names), input_feed, shape_group=shape_group)
-        except TypeError:
+        except (TypeError, ValueError):
             try:
                 outputs = session.run(list(names), input_feed, shape_group)
-            except TypeError:
+            except (TypeError, ValueError):
                 outputs = session.run(None, input_feed, shape_group=shape_group)
 
         if isinstance(outputs, dict):
@@ -192,16 +191,17 @@ class InferManager:
             mask = mask.astype(bfloat16)
 
             for layer_idx in range(self.config.num_hidden_layers):
+                input_meta = self._input_meta(self.decoder_sessions[layer_idx], slice_idx + 1)
                 input_feed = {
                     "K_cache": (
                         self.k_caches[layer_idx][:, 0 : slice_len * slice_idx, :]
                         if slice_idx
-                        else np.zeros((1, 1, self.kv_dim), dtype=bfloat16)
+                        else np.zeros(input_meta["K_cache"], dtype=bfloat16)
                     ),
                     "V_cache": (
                         self.v_caches[layer_idx][:, 0 : slice_len * slice_idx, :]
                         if slice_idx
-                        else np.zeros((1, 1, self.kv_dim), dtype=bfloat16)
+                        else np.zeros(input_meta["V_cache"], dtype=bfloat16)
                     ),
                     "indices": indices,
                     "input": data,

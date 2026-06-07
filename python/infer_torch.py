@@ -65,13 +65,18 @@ def main():
 
     text = tokenizer.apply_chat_template(messages, **render_kwargs)
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    model_inputs = {
+        "input_ids": inputs["input_ids"],
+    }
+    if "attention_mask" in inputs:
+        model_inputs["attention_mask"] = inputs["attention_mask"]
 
     print("input_ids.shape:", tuple(inputs.input_ids.shape))
     print("enable_thinking:", args.enable_thinking)
 
     with torch.inference_mode():
         outputs = model.generate(
-            **inputs,
+            **model_inputs,
             max_new_tokens=args.max_new_tokens,
             do_sample=args.do_sample,
         )
